@@ -1,0 +1,92 @@
+###################
+#     Config      #
+###################
+*.env
+*.claude
+
+###################
+#    Documents    #
+###################
+*.xlsx
+*.xls
+*.csv
+*.pdf
+*.swf
+
+###################
+#   Directories   #
+###################
+build/
+
+###################
+# Compiled source #
+###################
+smsDbViewer
+*.com
+*.class
+*.dll
+*.exe
+*.o
+*.so
+*.pyc
+*.py[co]
+
+
+############
+# Packages #
+############
+*.7z
+*.dmg
+*.gz
+*.iso
+*.jar
+*.rar
+*.tar
+*.zip
+*.pkg
+
+######################
+# Logs and databases #
+######################
+*.log
+*.sql
+*.sqlite
+
+######################
+# Editor Backup File #
+######################
+*~
+*.bak
+*.swp
+*.swo
+
+######################
+# OS generated files #
+######################
+*._*
+._*
+.*
+.DS_Store
+._.DS_Store
+.DS_Store?
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+######################
+#    Certificates    #
+######################
+*.pfx
+*.pem
+*.key
+*.crt
+*.p8
+
+######################
+#   Version Control  #
+######################
+.svn
+.git
+.git*
+!.gitignore
