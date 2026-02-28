@@ -51,6 +51,7 @@ smsDbViewer
 *.log
 *.sql
 *.sqlite
+*.db
 
 ######################
 # Editor Backup File #
