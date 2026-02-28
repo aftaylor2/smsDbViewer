@@ -4,6 +4,14 @@ A terminal UI for browsing and exporting macOS iMessage conversations, built wit
 
 Reads the iMessage SQLite database (`chat.db`) and displays conversations with contact names, timestamps, message counts, sent/received stats, and full message history.
 
+## Screenshots
+
+![Conversation List](https://storage.googleapis.com/ataylor-public/smsDbViewer/screenshots/conversations.png)
+
+![Conversation View](https://storage.googleapis.com/ataylor-public/smsDbViewer/screenshots/conversation.png)
+
+![Attachments](https://storage.googleapis.com/ataylor-public/smsDbViewer/screenshots/attachments.png)
+
 ## Install
 
 ```sh
