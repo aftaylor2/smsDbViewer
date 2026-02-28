@@ -112,6 +112,7 @@ make test
 ```
 
 Test coverage includes:
+
 - Conversation fetching, ordering, and participant resolution
 - Message pagination (cursor-based) and chronological ordering
 - Attachment parsing (JPEG, HEIC, PDF, video, multi-attachment messages)
@@ -145,7 +146,7 @@ Test coverage includes:
 
 ## Project Structure
 
-```
+```text
 main.go           Entry point, arg parsing, program bootstrap
 db.go             SQLite queries, data types, date conversion
 model.go          Bubble Tea state machine (conversation list, message view, search, attachments)
