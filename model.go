@@ -49,6 +49,13 @@ type model struct {
 	searching     bool
 	searchTerm    string
 
+	// In-conversation search state
+	msgSearchActive bool
+	msgSearchInput  textinput.Model
+	msgSearchTerm   string
+	msgSearchHits   []int // indices into m.messages that match
+	msgSearchIdx    int   // current match position in msgSearchHits
+
 	// Export state
 	exporting    bool
 	exportStatus string
@@ -246,6 +253,24 @@ func formatAttachments(attachments []AttachmentInfo) string {
 	return strings.Join(parts, " ")
 }
 
+func highlightTerm(text, term string) string {
+	lower := strings.ToLower(text)
+	lowerTerm := strings.ToLower(term)
+	var sb strings.Builder
+	pos := 0
+	for {
+		idx := strings.Index(lower[pos:], lowerTerm)
+		if idx < 0 {
+			sb.WriteString(text[pos:])
+			break
+		}
+		sb.WriteString(text[pos : pos+idx])
+		sb.WriteString(highlightStyle.Render(text[pos+idx : pos+idx+len(term)]))
+		pos += idx + len(term)
+	}
+	return sb.String()
+}
+
 func truncate(s string, max int) string {
 	if len(s) <= max {
 		return s
@@ -279,6 +304,11 @@ func NewModel(store *Store, contacts *ContactBook) model {
 	searchList.SetFilteringEnabled(false)
 	searchList.Styles.Title = titleStyle
 
+	msgSearchTi := textinput.New()
+	msgSearchTi.Placeholder = "Search in conversation..."
+	msgSearchTi.CharLimit = 256
+	msgSearchTi.Width = 40
+
 	attachDelegate := list.NewDefaultDelegate()
 	attachList := list.New([]list.Item{}, attachDelegate, 0, 0)
 	attachList.Title = "Attachments"
@@ -295,6 +325,7 @@ func NewModel(store *Store, contacts *ContactBook) model {
 		searchInput:    ti,
 		searchResults:  searchList,
 		attachmentList: attachList,
+		msgSearchInput: msgSearchTi,
 	}
 }
 
@@ -432,6 +463,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.convList, cmd = m.convList.Update(msg)
 		return m, cmd
 	case viewMessages:
+		if m.msgSearchActive && m.msgSearchInput.Focused() {
+			var cmd tea.Cmd
+			m.msgSearchInput, cmd = m.msgSearchInput.Update(msg)
+			return m, cmd
+		}
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
 		return m, cmd
@@ -492,11 +528,69 @@ func (m model) updateConversationList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateMessageView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// When the search input is focused, handle input keys
+	if m.msgSearchActive && m.msgSearchInput.Focused() {
+		switch msg.String() {
+		case "enter":
+			query := strings.TrimSpace(m.msgSearchInput.Value())
+			if query == "" {
+				m.msgSearchActive = false
+				m.msgSearchInput.Blur()
+				return m, nil
+			}
+			m.msgSearchInput.Blur()
+			m.msgSearchTerm = query
+			m.performMsgSearch()
+			if len(m.msgSearchHits) > 0 {
+				m.scrollToMsgSearchHit()
+			}
+			m.viewport.SetContent(m.renderMessages())
+			return m, nil
+		case "esc":
+			m.msgSearchActive = false
+			m.msgSearchTerm = ""
+			m.msgSearchHits = nil
+			m.msgSearchInput.Blur()
+			m.viewport.SetContent(m.renderMessages())
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.msgSearchInput, cmd = m.msgSearchInput.Update(msg)
+		return m, cmd
+	}
+
 	switch msg.String() {
 	case "esc", "backspace":
+		if m.msgSearchTerm != "" {
+			// First esc clears search highlighting
+			m.msgSearchActive = false
+			m.msgSearchTerm = ""
+			m.msgSearchHits = nil
+			m.viewport.SetContent(m.renderMessages())
+			return m, nil
+		}
 		m.state = viewConversations
 		m.messages = nil
 		m.exportStatus = ""
+		return m, nil
+	case "/":
+		m.msgSearchActive = true
+		m.msgSearchInput.SetValue("")
+		m.msgSearchInput.Focus()
+		return m, textinput.Blink
+	case "n":
+		if len(m.msgSearchHits) > 0 {
+			m.msgSearchIdx = (m.msgSearchIdx + 1) % len(m.msgSearchHits)
+			m.scrollToMsgSearchHit()
+			m.viewport.SetContent(m.renderMessages())
+		}
+		return m, nil
+	case "N":
+		if len(m.msgSearchHits) > 0 {
+			m.msgSearchIdx = (m.msgSearchIdx - 1 + len(m.msgSearchHits)) % len(m.msgSearchHits)
+			m.scrollToMsgSearchHit()
+			m.viewport.SetContent(m.renderMessages())
+		}
 		return m, nil
 	case "t":
 		m.viewport.GotoTop()
@@ -527,6 +621,43 @@ func (m model) updateMessageView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, cmd
+}
+
+func (m *model) performMsgSearch() {
+	m.msgSearchHits = nil
+	m.msgSearchIdx = 0
+	term := strings.ToLower(m.msgSearchTerm)
+	for i, msg := range m.messages {
+		if strings.Contains(strings.ToLower(msg.Text), term) {
+			m.msgSearchHits = append(m.msgSearchHits, i)
+		}
+	}
+}
+
+func (m *model) scrollToMsgSearchHit() {
+	if len(m.msgSearchHits) == 0 {
+		return
+	}
+	hitIdx := m.msgSearchHits[m.msgSearchIdx]
+
+	// Count rendered lines up to this message to scroll there
+	lineCount := 0
+	var lastDate string
+	if m.allLoaded || m.loading {
+		lineCount += 2 // "Beginning of conversation" or "Loading..." + blank line
+	}
+	for i, msg := range m.messages {
+		dateStr := msg.Date.Format("Monday, January 2, 2006")
+		if dateStr != lastDate {
+			lastDate = dateStr
+			lineCount += 3 // blank line + date separator + blank line
+		}
+		if i == hitIdx {
+			break
+		}
+		lineCount++ // message line
+	}
+	m.viewport.SetYOffset(lineCount)
 }
 
 func (m model) updateSearchView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -742,6 +873,10 @@ func (m model) renderMessages() string {
 		}
 
 		text := msg.Text
+		// Highlight search term in message text
+		if m.msgSearchTerm != "" && text != "" {
+			text = highlightTerm(text, m.msgSearchTerm)
+		}
 		if len(msg.Attachments) > 0 {
 			label := formatAttachments(msg.Attachments)
 			if text == "" {
@@ -772,10 +907,23 @@ func (m model) View() string {
 	case viewMessages:
 		headerText := m.buildMessageHeader()
 		header := headerStyle.Width(m.viewport.Width).Render(headerText)
-		footerText := fmt.Sprintf(" %.0f%%  |  esc: back  |  e: export CSV  |  a: attachments  |  t/b: top/bottom",
-			m.viewport.ScrollPercent()*100)
-		if m.exportStatus != "" {
-			footerText += "  |  " + m.exportStatus
+
+		var footerText string
+		if m.msgSearchActive && m.msgSearchInput.Focused() {
+			footerText = " " + m.msgSearchInput.View()
+		} else if m.msgSearchTerm != "" {
+			matchInfo := fmt.Sprintf(" %d/%d matches for %q  |  n/N: next/prev  |  esc: clear",
+				m.msgSearchIdx+1, len(m.msgSearchHits), m.msgSearchTerm)
+			if len(m.msgSearchHits) == 0 {
+				matchInfo = fmt.Sprintf(" No matches for %q  |  esc: clear", m.msgSearchTerm)
+			}
+			footerText = matchInfo
+		} else {
+			footerText = fmt.Sprintf(" %.0f%%  |  /: search  |  esc: back  |  e: export CSV  |  a: attachments  |  t/b: top/bottom",
+				m.viewport.ScrollPercent()*100)
+			if m.exportStatus != "" {
+				footerText += "  |  " + m.exportStatus
+			}
 		}
 		footer := statusBarStyle.Render(footerText)
 		return appStyle.Render(
